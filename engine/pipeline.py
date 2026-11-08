@@ -16,13 +16,13 @@ HIST_P = os.path.join(ROOT, "data", f"{CH_KEY}.json")
 HIST = json.load(open(HIST_P)) if os.path.exists(HIST_P) else {"videos": []}
 GKEY = os.environ["GEMINI_API_KEY"]
 
-def log(*a): print(f"[{datetime.datetime.utcnow():%H:%M:%S}]", *a, flush=True)
+def log(*a): print(f"[{datetime.datetime.now(datetime.timezone.utc):%H:%M:%S}]", *a, flush=True)
 
 # ---------------- Gemini ----------------
-WRITER_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
-REVIEW_MODELS = ["gemini-pro-latest", "gemini-2.5-pro", "gemini-flash-latest", "gemini-2.5-flash"]
+WRITER_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+REVIEW_MODELS = ["gemini-3.8-pro", "gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"]
 
-def gemini(prompt, models, json_out=True, search=False, temp=0.8):
+def _gemini_once(prompt, models, json_out, search, temp):
     last = None
     for m in models:
         for attempt in range(3):
@@ -30,8 +30,11 @@ def gemini(prompt, models, json_out=True, search=False, temp=0.8):
                     "generationConfig": {"temperature": temp}}
             if json_out: body["generationConfig"]["responseMimeType"] = "application/json"
             if search: body["tools"] = [{"google_search": {}}]
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-                              params={"key": GKEY}, json=body, timeout=300)
+            try:
+                r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                                  params={"key": GKEY}, json=body, timeout=300)
+            except Exception as e:
+                last = f"{m}: {e}"; time.sleep(15); continue
             if r.status_code == 200:
                 try:
                     txt = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"])
@@ -41,11 +44,20 @@ def gemini(prompt, models, json_out=True, search=False, temp=0.8):
                     return txt
                 except Exception as e:
                     last = f"{m}: parse error {e}"; continue
-            last = f"{m}: HTTP {r.status_code} {r.text[:200]}"
-            if r.status_code in (404, 400): break          # model unavailable -> next model
-            time.sleep(20 * (attempt + 1))                  # rate limit / overload
-        log("model failed:", last)
-    raise RuntimeError(f"All Gemini models failed: {last}")
+            last = f"{m}: HTTP {r.status_code} {r.text[:160]}"
+            if r.status_code in (400, 403, 404): break     # model unavailable -> next model
+            if r.status_code == 429 and "PerDay" in r.text: break   # daily quota gone for this model
+            time.sleep(35 * (attempt + 1))                   # per-minute rate limit / overload
+        log("model failed:", last.replace("\n", " ")[:200])
+    raise RuntimeError(last)
+
+def gemini(prompt, models, json_out=True, search=False, temp=0.8):
+    if search:
+        try:
+            return _gemini_once(prompt, models, json_out, True, temp)
+        except RuntimeError:
+            log("Google Search grounding unavailable on free quota -> continuing without it")
+    return _gemini_once(prompt, models, json_out, False, temp)
 
 past = [v["title"] for v in HIST["videos"]][-80:]
 
