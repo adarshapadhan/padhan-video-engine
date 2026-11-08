@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Padhan video engine: topic -> script -> review -> images -> voice -> render -> upload.
-Runs on GitHub Actions. Needs env: GEMINI_API_KEY, POLLINATIONS_API_KEY, YT_CLIENT_ID,
-YT_CLIENT_SECRET, YT_TOKEN_<CHANNEL>. Usage: python engine/pipeline.py <channel-key> [--no-upload]
+Runs on GitHub Actions. Needs env: GEMINI_API_KEY, YT_CLIENT_ID,
+YT_ALL, CF_ACCOUNT_ID, CF_API_TOKEN. Usage: python engine/pipeline.py <channel-key> [--no-upload]
 """
 import json, os, sys, time, random, re, subprocess, urllib.parse, datetime
 import requests
@@ -142,20 +142,35 @@ if QUALITY["wrong"] > 0 or min(QUALITY["hook"], QUALITY["retention"]) < 7:
     raise SystemExit(f"QUALITY GATE FAILED {QUALITY} — not publishing")
 
 # ---------------- 5. images ----------------
-PKEY = os.environ.get("POLLINATIONS_API_KEY", "")
-def gen_image(prompt, w, h, path, tries=5):
+CF_ACC = os.environ.get("CF_ACCOUNT_ID", ""); CF_TOK = os.environ.get("CF_API_TOKEN", "")
+import base64
+def _cf(model, **kw):
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACC}/ai/run/@cf/black-forest-labs/{model}"
+    h = {"Authorization": f"Bearer {CF_TOK}"}
+    if kw.pop("multipart", False):
+        r = requests.post(url, headers=h, files={k: (None, str(v)) for k, v in kw.items()}, timeout=180)
+    else:
+        r = requests.post(url, headers=h, json=kw, timeout=180)
+    if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+        return r.content
+    if r.status_code == 200:
+        img = (r.json().get("result") or {}).get("image")
+        if img: return base64.b64decode(img)
+    raise RuntimeError(f"{model} HTTP {r.status_code} {r.text[:200]}")
+
+def gen_image(prompt, w, h, path, tries=4):
+    # FLUX.2 klein (native aspect ratio) first, FLUX.1 schnell (square, cropped later) as fallback
+    sw, sh = (1024, 576) if w >= h else (576, 1024)
     for t in range(tries):
-        url = "https://gen.pollinations.ai/image/" + urllib.parse.quote(prompt[:900])
-        params = {"model": os.environ.get("IMG_MODEL", "flux"), "width": w, "height": h,
-                  "seed": random.randint(1, 10**9), "safe": "true", "nologo": "true"}
-        try:
-            r = requests.get(url, params=params, headers={"Authorization": f"Bearer {PKEY}"}, timeout=240)
-            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image") and len(r.content) > 20000:
-                open(path, "wb").write(r.content); return True
-            log("img retry", r.status_code, r.text[:120] if not r.headers.get("content-type", "").startswith("image") else len(r.content))
-        except Exception as e:
-            log("img error", e)
-        time.sleep(8 * (t + 1))
+        for model, kw in (("flux-2-klein-4b", dict(prompt=prompt, width=sw, height=sh, multipart=True)),
+                          ("flux-1-schnell", dict(prompt=prompt, steps=6))):
+            try:
+                data = _cf(model, **kw)
+                if len(data) > 15000:
+                    open(path, "wb").write(data); return True
+            except Exception as e:
+                log("img retry:", str(e)[:160])
+        time.sleep(10 * (t + 1))
     return False
 
 def make_images(scenes, w, h, d):
