@@ -10,6 +10,6 @@ topic (Gemini) -> fact sheet (Gemini + Google Search) -> script -> independent r
 * Every run keeps the finished videos for 7 days under Actions → run → Artifacts.
 * Manual test: Actions → daily-videos → Run workflow → channel `forgotten-empires`, no_upload `true`.
 
-Secrets (Settings → Secrets and variables → Actions): `GEMINI_API_KEY`, `POLLINATIONS_API_KEY`,
+Secrets: `GEMINI_API_KEY`, `POLLINATIONS_API_KEY`, `YT_ALL` (combined YouTube credentials). Legacy per-channel secrets also work: (Settings → Secrets and variables → Actions): `GEMINI_API_KEY`, `POLLINATIONS_API_KEY`,
 `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, `YT_TOKEN_FORGOTTEN_EMPIRES`, `YT_TOKEN_CURIOSITY_SHORTS`,
 `YT_TOKEN_BUSINESS_FRONTIER`, `YT_TOKEN_BYTE_BRIEF` (paste the whole `.youtube-token.json` content).

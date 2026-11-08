@@ -21,6 +21,7 @@ jobs:
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+      YT_ALL: ${{ secrets.YT_ALL }}
       YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_TOKEN_FORGOTTEN_EMPIRES: ${{ secrets.YT_TOKEN_FORGOTTEN_EMPIRES }}

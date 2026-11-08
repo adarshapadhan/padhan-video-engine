@@ -208,17 +208,23 @@ def thumbnail():
 thumb = thumbnail()
 
 # ---------------- 8. upload ----------------
+YT_ALL = json.loads(os.environ.get("YT_ALL") or "{}")
+def yt_token():
+    if YT_ALL: return YT_ALL["tokens"][CH_KEY]
+    return json.loads(os.environ[CH["token_secret"]])
 def yt_creds():
     from google.oauth2.credentials import Credentials
-    tok = json.loads(os.environ[CH["token_secret"]])
+    tok = yt_token()
+    cid = YT_ALL.get("client_id") or os.environ["YT_CLIENT_ID"]
+    csec = YT_ALL.get("client_secret") or os.environ["YT_CLIENT_SECRET"]
     return Credentials(None, refresh_token=tok["refresh_token"], token_uri="https://oauth2.googleapis.com/token",
-                       client_id=os.environ["YT_CLIENT_ID"], client_secret=os.environ["YT_CLIENT_SECRET"])
+                       client_id=cid, client_secret=csec)
 
 def upload(path, title, desc, tags, thumb_path=None):
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
     yt = build("youtube", "v3", credentials=yt_creds(), cache_discovery=False)
-    expected = json.loads(os.environ[CH["token_secret"]]).get("_channelId")
+    expected = yt_token().get("_channelId")
     mine = yt.channels().list(part="id", mine=True).execute()["items"][0]["id"]
     if expected and mine != expected:
         raise SystemExit(f"WRONG CHANNEL: token controls {mine}, expected {expected}. Not uploading.")
