@@ -218,6 +218,10 @@ def upload(path, title, desc, tags, thumb_path=None):
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
     yt = build("youtube", "v3", credentials=yt_creds(), cache_discovery=False)
+    expected = json.loads(os.environ[CH["token_secret"]]).get("_channelId")
+    mine = yt.channels().list(part="id", mine=True).execute()["items"][0]["id"]
+    if expected and mine != expected:
+        raise SystemExit(f"WRONG CHANNEL: token controls {mine}, expected {expected}. Not uploading.")
     body = {"snippet": {"title": title[:100], "description": desc[:4900], "tags": tags[:30], "categoryId": CH["category"]},
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True}}
     req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(path, chunksize=8 << 20, resumable=True))
