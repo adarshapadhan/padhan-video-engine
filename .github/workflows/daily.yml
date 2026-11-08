@@ -1,0 +1,78 @@
+name: daily-videos
+on:
+  schedule:
+    - cron: "17 2 * * *"        # 07:47 IST every day
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Channel key (blank = today's schedule)"
+        required: false
+      no_upload:
+        description: "Test run without uploading (true/false)"
+        required: false
+        default: "false"
+permissions:
+  contents: write
+concurrency: { group: daily-videos, cancel-in-progress: false }
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_TOKEN_FORGOTTEN_EMPIRES: ${{ secrets.YT_TOKEN_FORGOTTEN_EMPIRES }}
+      YT_TOKEN_CURIOSITY_SHORTS: ${{ secrets.YT_TOKEN_CURIOSITY_SHORTS }}
+      YT_TOKEN_BUSINESS_FRONTIER: ${{ secrets.YT_TOKEN_BUSINESS_FRONTIER }}
+      YT_TOKEN_BYTE_BRIEF: ${{ secrets.YT_TOKEN_BYTE_BRIEF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ hashFiles('package.json') }}
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fontconfig > /dev/null
+          pip install -q requests pillow numpy soundfile google-api-python-client google-auth
+          npm install --no-audit --no-fund
+          mkdir -p ~/.fonts
+          find node_modules/@expo-google-fonts -name "*.ttf" | grep -E "Cinzel_900Black|Anton_400Regular|Montserrat_800ExtraBold.ttf|Montserrat_900Black.ttf" | xargs -I{} cp {} ~/.fonts/
+          fc-cache -f > /dev/null
+      - name: Make videos
+        run: |
+          CH="${{ github.event.inputs.channel }}"
+          FLAG=""; [ "${{ github.event.inputs.no_upload }}" = "true" ] && FLAG="--no-upload"
+          if [ -z "$CH" ]; then
+            CH=$(python -c "import json,datetime;d=datetime.datetime.utcnow().weekday();print(' '.join(k for k,v in json.load(open('channels.json')).items() if d in v['days']))")
+          fi
+          FAIL=0
+          for c in $CH; do
+            echo "::group::$c"
+            python engine/pipeline.py $c $FLAG || FAIL=1
+            echo "::endgroup::"
+          done
+          exit $FAIL
+      - name: Save history
+        if: always()
+        run: |
+          git config user.name "padhan-video-engine"; git config user.email "actions@users.noreply.github.com"
+          git add data/ && git commit -m "history: $(date -u +%F)" && git push || echo "nothing to commit"
+      - name: Keep videos for review (7 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-${{ github.run_id }}
+          path: |
+            out/**/*.mp4
+            out/**/thumb.jpg
+            out/**/script.json
+            out/**/review_*.json
+          retention-days: 7
+          if-no-files-found: ignore

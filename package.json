@@ -1,0 +1,2 @@
+{ "name": "padhan-video-engine", "private": true, "type": "module",
+  "dependencies": { "kokoro-js": "1.2.1", "@expo-google-fonts/cinzel": "*", "@expo-google-fonts/anton": "*", "@expo-google-fonts/montserrat": "*" } }
