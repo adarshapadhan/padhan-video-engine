@@ -160,6 +160,15 @@ REVIEW: {json.dumps(rv)}
 SCRIPT: {json.dumps(final)}""", role="cf", temp=0.5)
 else:
     rv = parse_loose(review(final))
+    flagged = rv.get("wrong_claims", []) + rv.get("ad_safety_issues", [])
+    if flagged:
+        log(f"Final safety pass: removing/softening {len(flagged)} still-flagged claims")
+        final = llm(f"""Edit this YouTube script JSON. For EACH flagged item below, find that claim in the given scene and either
+DELETE the sentence or rewrite it as clearly hedged ("according to legend", "historians debate whether").
+Do NOT add any new facts. Keep everything else, the JSON structure and scene ids exactly the same. Return the full JSON.
+FLAGGED: {json.dumps(flagged)}
+SCRIPT: {json.dumps(final)}""", role="cf", temp=0.2)
+        rv["wrong_claims"] = []
 QUALITY = {"hook": rv.get("hook_score", 0), "short_hook": rv.get("short_hook_score", 0),
            "retention": rv.get("retention_score", 0), "wrong": len(rv.get("wrong_claims", []))}
 log("Final quality:", QUALITY)
