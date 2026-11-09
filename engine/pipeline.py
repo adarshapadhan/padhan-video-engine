@@ -37,7 +37,7 @@ def _gemini(m, prompt, json_out, temp):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": {"temperature": temp}}
     if json_out: body["generationConfig"]["responseMimeType"] = "application/json"
     r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-                      params={"key": GKEY}, json=body, timeout=180)
+                      params={"key": GKEY}, json=body, timeout=300)
     if r.status_code != 200: return None, r.status_code, r.text[:150]
     return "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]), 200, ""
 
@@ -50,7 +50,7 @@ def _cf_chat(m, prompt, json_out, temp):
 
 def llm(prompt, role="cf", json_out=True, temp=0.8):
     """role 'writer' = Gemini first; anything else = Cloudflare first. Each falls back to the other."""
-    chain = ([("g", m) for m in GEMINI_MODELS] + [("c", m) for m in CF_MODELS]) if role == "writer" \
+    chain = ([("g", m) for m in GEMINI_MODELS[:2]] + [("c", m) for m in CF_MODELS] + [("g", GEMINI_MODELS[2])]) if role == "writer" \
         else ([("c", m) for m in CF_MODELS] + [("g", m) for m in GEMINI_MODELS])
     last = None
     for prov, m in chain:
@@ -142,7 +142,7 @@ def parse_loose(txt):
     return json.loads(m.group(0)) if m else {}
 
 final = draft
-for rnd in range(1):
+for rnd in range(3):
     log(f"Review round {rnd+1}")
     rv = parse_loose(review(final))
     log("scores:", rv.get("hook_score"), rv.get("short_hook_score"), rv.get("retention_score"),
@@ -151,7 +151,8 @@ for rnd in range(1):
     good = (rv.get("hook_score", 0) >= 8 and rv.get("short_hook_score", 0) >= 8
             and rv.get("retention_score", 0) >= 8 and not rv.get("wrong_claims"))
     if good: break
-    final = llm(f"""Revise this YouTube script JSON by applying the editor's review. Fix every wrong claim, apply softenings,
+    final = llm(f"""Revise this YouTube script JSON by applying the editor's review. Fix every wrong claim — if you are not certain of the correct fact,
+REMOVE the claim or reframe it honestly ("according to legend", "some historians say") instead of guessing. Apply softenings,
 use the strongest hook rewrite if it beats the current hook, cut/merge sagging scenes, fix ad-safety issues.
 Keep the same JSON structure and all rules:
 {SCENE_RULES}
