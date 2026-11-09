@@ -43,7 +43,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fontconfig > /dev/null
           pip install -q requests pillow numpy soundfile google-api-python-client google-auth
-          npm install --no-audit --no-fund
+          export ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+          for i in 1 2 3; do npm install --no-audit --no-fund --onnxruntime-node-install-cuda=skip && break; echo "npm retry $i"; sleep 20; done
           mkdir -p ~/.fonts
           find node_modules/@expo-google-fonts -name "*.ttf" | grep -E "Cinzel_900Black|Anton_400Regular|Montserrat_800ExtraBold.ttf|Montserrat_900Black.ttf" | xargs -I{} cp {} ~/.fonts/
           fc-cache -f > /dev/null
