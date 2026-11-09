@@ -18,52 +18,65 @@ GKEY = os.environ["GEMINI_API_KEY"]
 
 def log(*a): print(f"[{datetime.datetime.now(datetime.timezone.utc):%H:%M:%S}]", *a, flush=True)
 
-# ---------------- Gemini ----------------
-WRITER_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
-REVIEW_MODELS = ["gemini-3.8-pro", "gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"]
+# ---------------- LLMs: Gemini (writer) + Cloudflare Workers AI (everything else / fallback) ----------------
+CF_ACC = os.environ.get("CF_ACCOUNT_ID", ""); CF_TOK = os.environ.get("CF_API_TOKEN", "")
+GEMINI_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+CF_MODELS = ["@cf/openai/gpt-oss-120b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/qwen/qwen3-30b-a3b-fp8"]
+DEAD = set()   # providers/models that hit a daily quota this run
 
-def _gemini_once(prompt, models, json_out, search, temp):
+def _parse(txt, json_out):
+    if not json_out: return txt
+    txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
+    txt = re.sub(r"^```(json)?|```$", "", txt.strip(), flags=re.M).strip()
+    try: return json.loads(txt)
+    except Exception:
+        m = re.search(r"\{.*\}", txt, re.S)
+        return json.loads(m.group(0))
+
+def _gemini(m, prompt, json_out, temp):
+    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": {"temperature": temp}}
+    if json_out: body["generationConfig"]["responseMimeType"] = "application/json"
+    r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                      params={"key": GKEY}, json=body, timeout=180)
+    if r.status_code != 200: return None, r.status_code, r.text[:150]
+    return "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"]), 200, ""
+
+def _cf_chat(m, prompt, json_out, temp):
+    body = {"model": m, "messages": [{"role": "user", "content": prompt}], "temperature": temp, "max_tokens": 12000}
+    r = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{CF_ACC}/ai/v1/chat/completions",
+                      headers={"Authorization": f"Bearer {CF_TOK}"}, json=body, timeout=240)
+    if r.status_code != 200: return None, r.status_code, r.text[:150]
+    return r.json()["choices"][0]["message"]["content"] or "", 200, ""
+
+def llm(prompt, role="cf", json_out=True, temp=0.8):
+    """role 'writer' = Gemini first; anything else = Cloudflare first. Each falls back to the other."""
+    chain = ([("g", m) for m in GEMINI_MODELS] + [("c", m) for m in CF_MODELS]) if role == "writer" \
+        else ([("c", m) for m in CF_MODELS] + [("g", m) for m in GEMINI_MODELS])
     last = None
-    for m in models:
-        for attempt in range(3):
-            body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": temp}}
-            if json_out: body["generationConfig"]["responseMimeType"] = "application/json"
-            if search: body["tools"] = [{"google_search": {}}]
+    for prov, m in chain:
+        if m in DEAD: continue
+        for attempt in range(2):
             try:
-                r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-                                  params={"key": GKEY}, json=body, timeout=300)
+                txt, code, err = (_gemini if prov == "g" else _cf_chat)(m, prompt, json_out, temp)
             except Exception as e:
-                last = f"{m}: {e}"; time.sleep(15); continue
-            if r.status_code == 200:
+                txt, code, err = None, 0, str(e)[:150]
+            if txt:
                 try:
-                    txt = "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"])
-                    if json_out:
-                        txt = re.sub(r"^```(json)?|```$", "", txt.strip()).strip()
-                        return json.loads(txt)
-                    return txt
+                    out = _parse(txt, json_out); log(f"  llm ok: {m}"); return out
                 except Exception as e:
-                    last = f"{m}: parse error {e}"; continue
-            last = f"{m}: HTTP {r.status_code} {r.text[:160]}"
-            if r.status_code in (400, 403, 404): break     # model unavailable -> next model
-            if r.status_code == 429 and "PerDay" in r.text: break   # daily quota gone for this model
-            time.sleep(35 * (attempt + 1))                   # per-minute rate limit / overload
-        log("model failed:", last.replace("\n", " ")[:200])
-    raise RuntimeError(last)
-
-def gemini(prompt, models, json_out=True, search=False, temp=0.8):
-    if search:
-        try:
-            return _gemini_once(prompt, models, json_out, True, temp)
-        except RuntimeError:
-            log("Google Search grounding unavailable on free quota -> continuing without it")
-    return _gemini_once(prompt, models, json_out, False, temp)
+                    last = f"{m}: bad JSON {e}"; continue
+            last = f"{m}: {code} {err}"
+            if code in (400, 401, 403, 404) or (code == 429 and prov == "g"):
+                DEAD.add(m); break
+            time.sleep(20)
+        log("  model skipped:", last.replace("\n", " ")[:180])
+    raise RuntimeError(f"All models failed: {last}")
 
 past = [v["title"] for v in HIST["videos"]][-80:]
 
 # ---------------- 1. topic ----------------
 log("Choosing topic for", CH["name"])
-topics = gemini(f"""You are the head of content strategy for the YouTube channel "{CH['name']}".
+topics = llm(f"""You are the head of content strategy for the YouTube channel "{CH['name']}".
 Niche: {CH['niche']}
 Proven format: {CH['format']}
 Already published (never repeat or closely overlap): {json.dumps(past)}
@@ -72,16 +85,16 @@ Propose 8 video ideas. Each must be a TRUE story/subject with enough well-docume
 have a massive curiosity gap, broad worldwide appeal, and evergreen search interest.
 Score each 1-10 on: click_appeal, retention_potential, factual_depth. Return JSON:
 {{"ideas":[{{"title":"...","angle":"one sentence","twist":"the true surprising twist ending","click_appeal":0,"retention_potential":0,"factual_depth":0}}]}}""",
-    WRITER_MODELS, temp=1.0)["ideas"]
+    role="cf", temp=1.0)["ideas"]
 topics.sort(key=lambda t: -(t["click_appeal"] + t["retention_potential"] + t["factual_depth"]))
 topic = topics[0]
 log("Topic:", topic["title"])
 
 # ---------------- 2. research (grounded) ----------------
-research = gemini(f"""Research this YouTube documentary topic using Google Search and return a dense fact sheet
+research = llm(f"""Research this YouTube documentary topic from your knowledge and return a dense fact sheet
 (40-60 bullet facts) with dates, names, numbers, places, notable quotes and 2-3 vivid true anecdotes.
 Mark uncertain or legendary claims as (LEGEND) or (DISPUTED). Include the twist: {topic['twist']}
-Topic: {topic['title']} — {topic['angle']}""", WRITER_MODELS, json_out=False, search=True, temp=0.3)
+Topic: {topic['title']} — {topic['angle']}""", role="cf", json_out=False, temp=0.3)
 
 SCENE_RULES = f"""Rules for the narration:
 - Written to be SPOKEN by a calm, gripping documentary narrator. Short punchy sentences mixed with longer ones.
@@ -94,7 +107,7 @@ SCENE_RULES = f"""Rules for the narration:
 
 # ---------------- 3. write ----------------
 log("Writing script")
-draft = gemini(f"""Write a complete YouTube documentary for "{CH['name']}".
+draft = llm(f"""Write a complete YouTube documentary for "{CH['name']}".
 Title idea: {topic['title']}  Angle: {topic['angle']}  Twist ending: {topic['twist']}
 Format: {CH['format']}
 FACT SHEET:
@@ -109,12 +122,12 @@ Return JSON:
 "thumbnail_text":"max 4 words, all caps","thumbnail_img":"photoreal thumbnail scene, dramatic, single clear subject",
 "short_title":"short title max 60 chars",
 "long":[{{"id":"s01","text":"...","img":"...","overlay":"optional","chapter":"optional"}}],
-"short":[{{"id":"h01","text":"...","img":"...","overlay":"optional"}}]}}""", WRITER_MODELS, temp=0.85)
+"short":[{{"id":"h01","text":"...","img":"...","overlay":"optional"}}]}}""", role="writer", temp=0.85)
 
 # ---------------- 4. independent review (different model + Google Search) ----------------
 def review(d):
-    return gemini(f"""You are a ruthless independent YouTube retention editor AND fact-checker. You did not write this.
-Fact-check every claim with Google Search. Judge the hook and pacing.
+    return llm(f"""You are a ruthless independent YouTube retention editor AND fact-checker. You did not write this.
+Fact-check every claim against your knowledge; flag anything you are not sure is true. Judge the hook and pacing.
 Script JSON:
 {json.dumps(d)}
 Return ONLY a JSON object (no prose) with:
@@ -122,14 +135,14 @@ Return ONLY a JSON object (no prose) with:
 "wrong_claims":[{{"id":"scene id","claim":"...","fix":"corrected wording"}}],
 "soften":[{{"id":"...","fix":"..."}}],
 "hook_rewrites":["3 stronger true first sentences"], "cut_or_merge":["scene ids that sag"],
-"ad_safety_issues":[{{"id":"...","fix":"..."}}]}}""", REVIEW_MODELS, json_out=False, search=True, temp=0.2)
+"ad_safety_issues":[{{"id":"...","fix":"..."}}]}}""", role="cf", json_out=False, temp=0.2)
 
 def parse_loose(txt):
     m = re.search(r"\{.*\}", txt, re.S)
     return json.loads(m.group(0)) if m else {}
 
 final = draft
-for rnd in range(2):
+for rnd in range(1):
     log(f"Review round {rnd+1}")
     rv = parse_loose(review(final))
     log("scores:", rv.get("hook_score"), rv.get("short_hook_score"), rv.get("retention_score"),
@@ -138,12 +151,12 @@ for rnd in range(2):
     good = (rv.get("hook_score", 0) >= 8 and rv.get("short_hook_score", 0) >= 8
             and rv.get("retention_score", 0) >= 8 and not rv.get("wrong_claims"))
     if good: break
-    final = gemini(f"""Revise this YouTube script JSON by applying the editor's review. Fix every wrong claim, apply softenings,
+    final = llm(f"""Revise this YouTube script JSON by applying the editor's review. Fix every wrong claim, apply softenings,
 use the strongest hook rewrite if it beats the current hook, cut/merge sagging scenes, fix ad-safety issues.
 Keep the same JSON structure and all rules:
 {SCENE_RULES}
 REVIEW: {json.dumps(rv)}
-SCRIPT: {json.dumps(final)}""", WRITER_MODELS, temp=0.5)
+SCRIPT: {json.dumps(final)}""", role="cf", temp=0.5)
 else:
     rv = parse_loose(review(final))
 QUALITY = {"hook": rv.get("hook_score", 0), "short_hook": rv.get("short_hook_score", 0),
@@ -154,7 +167,6 @@ if QUALITY["wrong"] > 0 or min(QUALITY["hook"], QUALITY["retention"]) < 7:
     raise SystemExit(f"QUALITY GATE FAILED {QUALITY} — not publishing")
 
 # ---------------- 5. images ----------------
-CF_ACC = os.environ.get("CF_ACCOUNT_ID", ""); CF_TOK = os.environ.get("CF_API_TOKEN", "")
 import base64
 def _cf(model, **kw):
     url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACC}/ai/run/@cf/black-forest-labs/{model}"
