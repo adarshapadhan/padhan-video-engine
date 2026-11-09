@@ -8,8 +8,8 @@ import requests
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CH_KEY = sys.argv[1]
-NO_UPLOAD = "--no-upload" in sys.argv
 CH = json.load(open(os.path.join(ROOT, "channels.json")))[CH_KEY]
+NO_UPLOAD = "--no-upload" in sys.argv or not CH.get("live", False)   # safety lock until approved
 OUT = os.path.join(ROOT, "out", CH_KEY)
 os.makedirs(OUT, exist_ok=True)
 HIST_P = os.path.join(ROOT, "data", f"{CH_KEY}.json")
