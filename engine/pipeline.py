@@ -30,8 +30,11 @@ def _parse(txt, json_out):
     txt = re.sub(r"^```(json)?|```$", "", txt.strip(), flags=re.M).strip()
     try: return json.loads(txt)
     except Exception:
+        from json_repair import repair_json
         m = re.search(r"\{.*\}", txt, re.S)
-        return json.loads(m.group(0))
+        out = repair_json(m.group(0) if m else txt, return_objects=True)
+        if not isinstance(out, dict) or not out: raise ValueError("unparseable JSON")
+        return out
 
 def _gemini(m, prompt, json_out, temp):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": {"temperature": temp}}
@@ -135,11 +138,10 @@ Return ONLY a JSON object (no prose) with:
 "wrong_claims":[{{"id":"scene id","claim":"...","fix":"corrected wording"}}],
 "soften":[{{"id":"...","fix":"..."}}],
 "hook_rewrites":["3 stronger true first sentences"], "cut_or_merge":["scene ids that sag"],
-"ad_safety_issues":[{{"id":"...","fix":"..."}}]}}""", role="cf", json_out=False, temp=0.2)
+"ad_safety_issues":[{{"id":"...","fix":"..."}}]}}""", role="cf", json_out=True, temp=0.2)
 
-def parse_loose(txt):
-    m = re.search(r"\{.*\}", txt, re.S)
-    return json.loads(m.group(0)) if m else {}
+def parse_loose(x):
+    return x if isinstance(x, dict) else _parse(x, True)
 
 final = draft
 for rnd in range(3):

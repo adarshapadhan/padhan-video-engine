@@ -42,7 +42,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fontconfig > /dev/null
-          pip install -q requests pillow numpy soundfile google-api-python-client google-auth
+          pip install -q json-repair requests pillow numpy soundfile google-api-python-client google-auth
           export ONNXRUNTIME_NODE_INSTALL_CUDA=skip
           for i in 1 2 3; do npm install --no-audit --no-fund --onnxruntime-node-install-cuda=skip && break; echo "npm retry $i"; sleep 20; done
           mkdir -p ~/.fonts
