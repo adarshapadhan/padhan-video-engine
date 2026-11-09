@@ -75,6 +75,7 @@ jobs:
           path: |
             out/**/*.mp4
             out/**/thumb.jpg
+            out/**/img/*.jpg
             out/**/script.json
             out/**/review_*.json
           retention-days: 7
