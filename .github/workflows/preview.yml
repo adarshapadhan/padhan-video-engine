@@ -1,0 +1,25 @@
+name: previews-from-run
+on:
+  push:
+    branches: [main]
+    paths: ["preview/**"]
+permissions: { contents: write, actions: read }
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read run id
+        id: r
+        run: echo "id=$(cat preview/run.txt)" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.r.outputs.id }}
+          github-token: ${{ github.token }}
+          path: dl
+      - name: Build and publish previews
+        env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+        run: |
+          sudo apt-get install -y -qq ffmpeg > /dev/null; pip install -q pillow
+          mkdir -p out; cp -r dl/*/* out/ 2>/dev/null || true; ls -R out | head -30
+          bash engine/make_previews.sh
