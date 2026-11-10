@@ -228,7 +228,7 @@ fc.append(f"[{na}:a]aresample=48000,volume=1.0,highpass=f=70,acompressor=thresho
 fc.append(f"[{na+1}:a]volume={0.16 if LONG else 0.2}[m]")
 fc.append(f"[m][n]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=400[md]")
 fc.append(f"[n2][md]amix=inputs=2:normalize=0,alimiter=limit=0.95,afade=t=out:st={total-1.6:.2f}:d=1.6[a]")
-cmd = ["ffmpeg", "-y", "-loglevel", "error", "-stats", *inputs, "-i", os.path.join(work, "narration.wav"),
+cmd = ["ffmpeg", "-y", "-loglevel", "error", *inputs, "-i", os.path.join(work, "narration.wav"),
        "-i", os.path.join(work, "music.wav"), "-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]",
        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS),
        "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.2f}", "-movflags", "+faststart", out_p]

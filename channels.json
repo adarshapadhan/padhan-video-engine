@@ -10,7 +10,7 @@
   "speed": 0.95,
   "niche": "dramatic history: ancient and medieval empires, wars, rulers, collapses, survival in brutal historical eras",
   "format": "Second-person danger documentary. Title pattern examples: 'Why You'd Never Want To Fight The Mongols', 'Why You'd Never Want To Be A Roman Legionary', 'What It Was Actually Like To Survive The Siege Of X'. Put the viewer ('you') inside the story from the first sentence, escalate stakes chapter by chapter, and end with a true, surprising twist that reframes everything.",
-  "style": "cinematic historical film still, shot on ARRI Alexa with anamorphic lens, natural light, muted earthy color grade with teal shadows, light haze, subtle film grain, ultra-realistic, no text, no watermark",
+  "style": "cinematic historical film still, shot on ARRI Alexa with anamorphic lens, natural light, muted earthy color grade with teal shadows, light haze, subtle film grain, ultra-realistic, no text, no letters, no numbers, no watermark",
   "category": "27",
   "live": false
  },
@@ -25,7 +25,7 @@
   "speed": 1.0,
   "niche": "nature's most extreme animals, deep ocean, predators, and astonishing natural phenomena",
   "format": "Second-person encounter documentary. Title pattern examples: 'Why You'd Never Want To Meet A Cassowary', 'What Would Happen If You Fell Into The Mariana Trench'. Open with the viewer face to face with the danger, reveal escalating real facts (size, speed, senses, records), include one famous real incident, and end with a twist (often: the real danger runs the other way, e.g. humans).",
-  "style": "breathtaking wildlife documentary photograph, National Geographic quality, telephoto lens, dramatic natural lighting, ultra-realistic, sharp detail, no text, no watermark",
+  "style": "breathtaking wildlife documentary photograph, National Geographic quality, telephoto lens, dramatic natural lighting, ultra-realistic, sharp detail, no text, no letters, no numbers, no watermark",
   "category": "28",
   "live": false
  },
@@ -40,7 +40,7 @@
   "speed": 0.98,
   "niche": "true business stories: empires built and destroyed, legendary deals, collapses, scams, how famous companies and markets really work",
   "format": "Story-driven business documentary. Title pattern examples: 'The Deal That Destroyed A Billion Dollar Company', 'Why You'd Never Want To Compete With Walmart', 'How One Mistake Bankrupted X'. Open on the most dramatic moment, rewind to explain how it happened, use concrete numbers, and end with a lesson or twist the viewer didn't see coming.",
-  "style": "cinematic photograph, moody corporate drama film still, shallow depth of field, dramatic lighting, realistic, no logos, no text, no watermark",
+  "style": "cinematic photograph, moody corporate drama film still, shallow depth of field, dramatic lighting, realistic, no logos, no text, no letters, no numbers, no watermark",
   "category": "27",
   "live": false
  },
@@ -54,7 +54,7 @@
   "speed": 1.0,
   "niche": "technology stories: inventions that changed the world, engineering marvels, tech disasters, and how famous machines actually work",
   "format": "Story-driven tech documentary. Title pattern examples: 'The Machine That Almost Ended The World', 'Why You'd Never Want To Work Inside A Nuclear Reactor', 'How X Actually Works'. Open on a vivid moment, explain with clear analogies, escalate, and end with a surprising twist.",
-  "style": "cinematic photograph, high-tech documentary film still, dramatic lighting, ultra-realistic, sharp detail, no logos, no text, no watermark",
+  "style": "cinematic photograph, high-tech documentary film still, dramatic lighting, ultra-realistic, sharp detail, no logos, no text, no letters, no numbers, no watermark",
   "category": "28",
   "live": false
  }

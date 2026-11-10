@@ -12,6 +12,7 @@ CH = json.load(open(os.path.join(ROOT, "channels.json")))[CH_KEY]
 NO_UPLOAD = "--no-upload" in sys.argv or not CH.get("live", False)   # safety lock until approved
 OUT = os.path.join(ROOT, "out", CH_KEY)
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
 HIST_P = os.path.join(ROOT, "data", f"{CH_KEY}.json")
 HIST = json.load(open(HIST_P)) if os.path.exists(HIST_P) else {"videos": []}
 GKEY = os.environ["GEMINI_API_KEY"]
@@ -112,7 +113,9 @@ SCENE_RULES = f"""Rules for the narration:
 - Every 60-90 seconds add a re-hook (a question, a reversal, 'but the worst part was still coming').
 - Spell out years and numbers as words the narrator would say (e.g. 'twelve nineteen', 'four hundred and fifty').
 - Use ONLY facts from the fact sheet; frame legends as legends. No graphic gore descriptions (keep it advertiser-friendly: aftermath, not injuries).
-- Each scene = 1-3 sentences (6-15 seconds) with ONE strong visual. img must describe a single photoreal cinematic shot (subject, setting, lighting, camera), never text/maps/diagrams, no gore, no famous modern people.
+- Each scene = 1-3 sentences (6-15 seconds) with ONE strong visual. img must describe a single photoreal cinematic shot (subject, setting, lighting, camera) that a real camera could have filmed.
+- img rules: NEVER include text, letters, numbers, signs, logos, gauges, meters, dials, clocks, compasses, phones, screens, charts or maps; never visualize a statistic literally (show the real subject instead, e.g. a crocodile's jaws, not a pressure gauge);
+  no hybrid or fantasy creatures; animals must be the correct species for the place; people must be locals of that exact place and era (e.g. Bengali fishermen in the Sundarbans, not Western tourists), dressed accurately; no gore.
 - Use "overlay" (max 3 words, e.g. a year, a number, a place) on 6-10 key scenes, and "chapter" (2-4 word title) on 4-6 scenes that start a new section."""
 
 # ---------------- 3. write ----------------
@@ -124,7 +127,7 @@ FACT SHEET:
 {research}
 
 {SCENE_RULES}
-Long video: 1150-1400 words of narration, 40-55 scenes, last scene invites viewers to subscribe to {CH['name']} in one short sentence.
+Long video: 1150-1400 words of narration (THIS LENGTH IS MANDATORY, about 8-9 minutes), 40-55 scenes, last scene invites viewers to subscribe to {CH['name']} in one short sentence.
 Short (vertical, under 55 seconds): 110-130 words, 8-10 scenes, a different hook built for scrolling viewers, ends with 'Full story on {CH['name']}.'
 
 Return JSON:
@@ -163,6 +166,7 @@ for rnd in range(3):
     final = llm(f"""Revise this YouTube script JSON by applying the editor's review. Fix every wrong claim — if you are not certain of the correct fact,
 REMOVE the claim or reframe it honestly ("according to legend", "some historians say") instead of guessing. Apply softenings,
 use the strongest hook rewrite if it beats the current hook, cut/merge sagging scenes, fix ad-safety issues.
+Keep the long narration between 1150 and 1400 words: if you cut weak scenes, replace them with new well-established facts so the length stays.
 Keep the same JSON structure and all rules:
 {SCENE_RULES}
 REVIEW: {json.dumps(rv)}
@@ -181,6 +185,18 @@ SCRIPT: {json.dumps(final)}""", role="cf", temp=0.2)
 QUALITY = {"hook": rv.get("hook_score", 0), "short_hook": rv.get("short_hook_score", 0),
            "retention": rv.get("retention_score", 0), "wrong": len(rv.get("wrong_claims", []))}
 log("Final quality:", QUALITY)
+def words(sc): return sum(len(x.get("text", "").split()) for x in sc)
+for attempt in range(2):
+    n = words(final["long"])
+    log(f"Long narration: {n} words, {len(final['long'])} scenes")
+    if n >= 1050: break
+    final = llm(f"""This YouTube documentary script is too short ({n} words). Expand the "long" part to 1200-1350 words and 42-52 scenes
+by adding more well-established, verifiable facts, a true anecdote and stronger escalation. Never invent facts; frame legends as legends.
+Keep the hook, the twist ending, the "short" part and the JSON structure unchanged. Follow these rules:
+{SCENE_RULES}
+SCRIPT: {json.dumps(final)}""", role="cf", temp=0.6)
+if words(final["long"]) < 900:
+    raise SystemExit("SCRIPT TOO SHORT after expansion — not publishing")
 json.dump(final, open(os.path.join(OUT, "script.json"), "w"), indent=1)
 if QUALITY["wrong"] > 0 or min(QUALITY["hook"], QUALITY["retention"]) < 7:
     raise SystemExit(f"QUALITY GATE FAILED {QUALITY} — not publishing")
