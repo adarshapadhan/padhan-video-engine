@@ -1,0 +1,33 @@
+name: upload-from-run
+on:
+  push:
+    branches: [main]
+    paths: ["upload/**"]
+permissions: { contents: write, actions: read }
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read request
+        id: r
+        run: |
+          echo "id=$(sed -n 1p upload/run.txt)" >> $GITHUB_OUTPUT
+          echo "ch=$(sed -n 2p upload/run.txt)" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.r.outputs.id }}
+          github-token: ${{ github.token }}
+          path: dl
+      - run: pip install -q google-api-python-client google-auth
+      - name: Upload to YouTube
+        env: { YT_ALL: "${{ secrets.YT_ALL }}" }
+        run: |
+          D=$(dirname $(find dl -name long.mp4 | grep "/${{ steps.r.outputs.ch }}/" | head -1))
+          ls -la "$D"
+          python engine/upload_only.py ${{ steps.r.outputs.ch }} "$D"
+      - name: Save history
+        if: always()
+        run: |
+          git config user.name padhan-video-engine; git config user.email actions@users.noreply.github.com
+          git add data/ && git commit -m "upload history" && git pull --rebase -q && git push || echo nothing
