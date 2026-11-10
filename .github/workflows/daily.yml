@@ -1,5 +1,8 @@
 name: daily-videos
 on:
+  push:
+    branches: [main]
+    paths: ["trigger/**"]
   schedule:
     - cron: "47 0 * * *"        # 06:17 IST, just after the free Cloudflare allowance resets
   workflow_dispatch:
