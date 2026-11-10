@@ -26,6 +26,7 @@ DEAD = set()   # providers/models that hit a daily quota this run
 
 def _parse(txt, json_out):
     if not json_out: return txt
+    if isinstance(txt, (dict, list)): return txt
     txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
     txt = re.sub(r"^```(json)?|```$", "", txt.strip(), flags=re.M).strip()
     try: return json.loads(txt)
@@ -88,7 +89,13 @@ Propose 8 video ideas. Each must be a TRUE story/subject with enough well-docume
 have a massive curiosity gap, broad worldwide appeal, and evergreen search interest.
 Score each 1-10 on: click_appeal, retention_potential, factual_depth. Return JSON:
 {{"ideas":[{{"title":"...","angle":"one sentence","twist":"the true surprising twist ending","click_appeal":0,"retention_potential":0,"factual_depth":0}}]}}""",
-    role="cf", temp=1.0)["ideas"]
+    role="cf", temp=1.0)
+if isinstance(topics, dict): topics = topics.get("ideas") or next((v for v in topics.values() if isinstance(v, list)), [])
+topics = [t for t in topics if isinstance(t, dict) and t.get("title")]
+for t in topics:
+    for k in ("click_appeal", "retention_potential", "factual_depth"):
+        try: t[k] = float(t.get(k, 0))
+        except Exception: t[k] = 0
 topics.sort(key=lambda t: -(t["click_appeal"] + t["retention_potential"] + t["factual_depth"]))
 topic = topics[0]
 log("Topic:", topic["title"])
